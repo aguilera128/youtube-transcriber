@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Transcriber</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&family=Inter:wght@400;500;600&display=swap"
+        rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Transcriber</h1>
+            <p>Convierte videos de YouTube a texto con el poder de la IA</p>
+        </header>
+
+        <main>
+            <div class="input-wrapper">
+                <div class="input-group">
+                    <input type="text" id="videoUrl" placeholder="Pega el enlace de YouTube aquí..." autocomplete="off">
+                    <button id="transcribeBtn">
+                        <span class="btn-text">Transcribir</span>
+                    </button>
+                </div>
+            </div>
+
+            <div id="statusPill" class="status-pill hidden">
+                <div class="status-content">
+                    <div class="status-icon">
+                        <div class="status-dot"></div>
+                    </div>
+                    <span class="status-text">Iniciando...</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill"></div>
+                </div>
+            </div>
+
+            <div id="errorMsg" class="error-message hidden"></div>
+
+            <div id="resultContainer" class="result-container hidden">
+                <div class="result-header">
+                    <div class="header-content">
+                        <h2 id="videoTitle"></h2>
+                        <div class="stats-container">
+                            <span class="stat-badge" id="statTime">⏱️ --s</span>
+                            <span class="stat-badge" id="statWords">📝 -- palabras</span>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button id="copyBtn" class="icon-btn" title="Copiar texto">
+                            <svg viewBox="0 0 24 24">
+                                <path
+                                    d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+                            </svg>
+                            <div class="tooltip" id="copyTooltip">Copiado!</div>
+                        </button>
+                    </div>
+                </div>
+                <div class="transcription-box">
+                    <p id="transcriptionText"></p>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
