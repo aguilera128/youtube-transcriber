@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const progressBarFill = statusPill.querySelector('.progress-bar-fill');
 
         statusPill.classList.remove('hidden');
+        statusPill.style.display = 'flex';
         statusText.textContent = "Iniciando...";
         progressBarFill.style.width = '0%';
 
@@ -118,6 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                         easing: 'easeInBack',
                                         complete: () => {
                                             statusPill.classList.add('hidden');
+                                            statusPill.style.display = 'none';
                                         }
                                     });
                                 }
