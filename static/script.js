@@ -7,6 +7,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const errorMsg = document.getElementById('errorMsg');
     const copyBtn = document.getElementById('copyBtn');
 
+    // Auto-start on paste
+    videoUrlInput.addEventListener('paste', (e) => {
+        setTimeout(() => {
+            const url = videoUrlInput.value.trim();
+            // Check if it's a YouTube URL
+            if (url && (url.includes('youtube.com') || url.includes('youtu.be'))) {
+                transcribeBtn.click();
+            }
+        }, 100); // Small delay to let the paste complete
+    });
+
     transcribeBtn.addEventListener('click', async () => {
         const url = videoUrlInput.value.trim();
         if (!url) return;
@@ -28,23 +39,46 @@ document.addEventListener('DOMContentLoaded', () => {
         statusText.textContent = "Iniciando...";
         progressBarFill.style.width = '0%';
 
-        // Entrance Animation
-        anime({
-            targets: '#statusPill',
-            translateY: [20, 0],
-            opacity: [0, 1],
-            scale: [0.9, 1],
-            duration: 800,
-            easing: 'easeOutElastic(1, .6)'
+        // Reset opacity for stagger
+        anime.set('#statusPill', { opacity: 0, translateY: 20 });
+        anime.set('.el', { opacity: 0, translateY: 10 });
+
+        // Staggered Entrance Animation
+        var timeline = anime.timeline({
+            easing: 'easeOutElastic(1, .6)',
+            duration: 800
         });
 
+        timeline
+            .add({
+                targets: '#statusPill',
+                translateY: [20, 0],
+                opacity: [0, 1],
+                duration: 600,
+                easing: 'easeOutExpo'
+            })
+            .add({
+                targets: '.el',
+                translateY: [10, 0],
+                opacity: [0, 1],
+                delay: anime.stagger(100), // Stagger each element by 100ms
+            }, '-=400');
+
         try {
+            // Get selected model options
+            const engine = document.getElementById('engineSelect').value;
+            const modelSize = document.getElementById('modelSizeSelect').value;
+
             const response = await fetch('/transcribe', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ url: url }),
+                body: JSON.stringify({
+                    url: url,
+                    engine: engine,
+                    model_size: modelSize
+                }),
             });
 
             const reader = response.body.getReader();
@@ -185,4 +219,114 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error al copiar: ', err);
             });
     });
+
+    // History Feature
+    const historyBtn = document.getElementById('historyBtn');
+    const historyModal = document.getElementById('historyModal');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const historyList = document.getElementById('historyList');
+    function toggleModal(show) {
+        if (show) {
+            historyModal.classList.remove('hidden');
+            historyModal.style.setProperty('display', 'flex', 'important');
+            // Small delay to allow display:flex to apply before adding active class for transition
+            setTimeout(() => {
+                historyModal.classList.add('active');
+            }, 10);
+        } else {
+            historyModal.classList.remove('active');
+            setTimeout(() => {
+                historyModal.classList.add('hidden');
+                historyModal.style.display = 'none';
+            }, 300); // Match transition duration
+        }
+    }
+
+    if (historyBtn) {
+        historyBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/history');
+                const history = await response.json();
+
+                historyList.innerHTML = '';
+
+                if (history.length === 0) {
+                    historyList.innerHTML = '<div class="empty-history">No hay transcripciones guardadas.</div>';
+                } else {
+                    history.forEach(item => {
+                        const el = document.createElement('div');
+                        el.className = 'history-item';
+
+                        const date = new Date(item.created_at).toLocaleDateString('es-ES', {
+                            day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                        });
+
+                        el.innerHTML = `
+                        <div class="history-title">${item.video_title || 'Video sin título'}</div>
+                        <div class="history-date">${date}</div>
+                    `;
+
+                        el.addEventListener('click', async () => {
+                            // Fetch full details
+                            try {
+                                const detailResponse = await fetch(`/history/${item.id}`);
+                                const detail = await detailResponse.json();
+
+                                // Populate Main UI
+                                videoTitle.textContent = detail.video_title;
+                                transcriptionText.textContent = detail.transcription;
+
+                                // Display saved stats if available
+                                if (detail.duration) {
+                                    document.getElementById('statTime').textContent = `⏱️ ${detail.duration}s`;
+                                } else {
+                                    document.getElementById('statTime').textContent = '';
+                                }
+
+                                if (detail.word_count) {
+                                    document.getElementById('statWords').textContent = `📝 ${detail.word_count} palabras`;
+                                } else {
+                                    document.getElementById('statWords').textContent = '';
+                                }
+
+                                resultContainer.classList.remove('hidden');
+
+                                // Animate Result Entrance
+                                anime({
+                                    targets: '.result-container',
+                                    translateY: [20, 0],
+                                    opacity: [0, 1],
+                                    duration: 800,
+                                    easing: 'easeOutExpo'
+                                });
+
+                                toggleModal(false);
+
+                            } catch (err) {
+                                console.error("Error loading history item", err);
+                            }
+                        });
+
+                        historyList.appendChild(el);
+                    });
+                }
+
+                toggleModal(true);
+
+            } catch (error) {
+                console.error("Error fetching history", error);
+            }
+        });
+
+        closeModalBtn.addEventListener('click', () => {
+            toggleModal(false);
+        });
+
+        // Close on click outside
+        historyModal.addEventListener('click', (e) => {
+            if (e.target === historyModal) {
+                toggleModal(false);
+            }
+        });
+    }
 });

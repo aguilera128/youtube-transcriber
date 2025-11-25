@@ -18,9 +18,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import yt_dlp
 import whisper
+from faster_whisper import WhisperModel
 from pydantic import BaseModel
 
 app = FastAPI()
+
+# Model caches for lazy loading
+whisper_models = {}
+faster_whisper_models = {}
 
 # Database setup
 DB_NAME = "transcriptions.db"
@@ -34,9 +39,25 @@ def init_db():
             video_url TEXT NOT NULL,
             video_title TEXT,
             transcription TEXT,
+            duration REAL,
+            word_count INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    # Migrate existing database: add new columns if they don't exist
+    try:
+        cursor.execute("ALTER TABLE transcriptions ADD COLUMN duration REAL")
+        print("Added 'duration' column to existing table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
+    try:
+        cursor.execute("ALTER TABLE transcriptions ADD COLUMN word_count INTEGER")
+        print("Added 'word_count' column to existing table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
     conn.commit()
     conn.close()
 
@@ -57,6 +78,8 @@ app.add_middleware(
 
 class VideoRequest(BaseModel):
     url: str
+    engine: str = "whisper"  # "whisper" or "faster-whisper"
+    model_size: str = "tiny"  # "tiny", "base", "small", "medium"
 
 def get_device():
     if torch.cuda.is_available():
@@ -66,20 +89,35 @@ def get_device():
     else:
         return "cpu"
 
-# Load Whisper model globally to avoid reloading on every request
-# Using "base" model for a balance of speed and accuracy.
-# Options: tiny, base, small, medium, large
+# Device configuration
 device = get_device()
-print(f"Loading Whisper model on device: {device}")
+use_fp16 = device in ["cuda", "mps"]  # Enable FP16 for GPU acceleration
+print(f"Device detected: {device}, FP16 support: {use_fp16}")
 
-try:
-    # Suppress FP16 warning on CPU if it happens, though we handle device selection
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message="FP16 is not supported on CPU")
-        model = whisper.load_model("base", device=device)
-except Exception as e:
-    print(f"Error loading Whisper model: {e}")
-    model = None
+def get_whisper_model(model_size="tiny"):
+    """Lazy load Whisper model"""
+    if model_size not in whisper_models:
+        print(f"Loading Whisper model: {model_size}")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="FP16 is not supported on CPU")
+            whisper_models[model_size] = whisper.load_model(model_size, device=device)
+    return whisper_models[model_size]
+
+def get_faster_whisper_model(model_size="tiny"):
+    """Lazy load Faster-Whisper model"""
+    if model_size not in faster_whisper_models:
+        print(f"Loading Faster-Whisper model: {model_size}")
+        # Faster-Whisper supports float16 only on CUDA, use int8 for CPU/MPS
+        if device == "cuda":
+            compute_type = "float16"
+        else:
+            compute_type = "int8"
+        faster_whisper_models[model_size] = WhisperModel(
+            model_size,
+            device="cuda" if device == "cuda" else "cpu",
+            compute_type=compute_type
+        )
+    return faster_whisper_models[model_size]
 
 @app.get("/")
 async def read_root():
@@ -87,10 +125,10 @@ async def read_root():
 
 @app.post("/transcribe")
 async def transcribe_video(request: VideoRequest):
-    if not model:
-        raise HTTPException(status_code=500, detail="Whisper model not loaded.")
-
     video_url = request.url
+    engine = request.engine
+    model_size = request.model_size
+    
     if not video_url:
         raise HTTPException(status_code=400, detail="No URL provided.")
 
@@ -124,39 +162,61 @@ async def transcribe_video(request: VideoRequest):
             yield json.dumps({"step": "download", "status": "completed"}) + "\n"
 
             # Step 2: Transcribe
-            yield json.dumps({"step": "transcribe", "status": "active"}) + "\n"
+            yield json.dumps({"step": "transcribe", "status": "active", "engine": engine, "model": model_size}) + "\n"
             
             if not os.path.exists(audio_file):
                  yield json.dumps({"error": "Audio download failed."}) + "\n"
                  return
 
-            if model is None:
-                yield json.dumps({"error": "Whisper model not loaded."}) + "\n"
-                return
-
-            # Run transcription in a separate thread to not block the event loop
-            # For simplicity in this synchronous generator, we call it directly, 
-            # but in a real async app we might want to use run_in_executor if it blocks too much.
-            # Since this is a generator, it will block this specific stream, which is fine.
-            result = model.transcribe(audio_file)
-            
-            # Format text into paragraphs
-            segments = result["segments"]
-            formatted_text = ""
-            current_paragraph = ""
-            
-            for segment in segments:
-                text = segment["text"].strip()
-                current_paragraph += text + " "
-                
-                if text.endswith(('.', '!', '?')) and len(current_paragraph) > 300:
-                    formatted_text += current_paragraph.strip() + "\n\n"
+            # Load appropriate model based on engine
+            try:
+                if engine == "faster-whisper":
+                    model = get_faster_whisper_model(model_size)
+                    # Faster-Whisper returns segments and info
+                    segments, info = model.transcribe(audio_file, beam_size=5)
+                    
+                    # Convert segments to text with formatting
+                    formatted_text = ""
                     current_paragraph = ""
-            
-            if current_paragraph:
-                formatted_text += current_paragraph.strip()
-                
-            transcription_text = formatted_text if formatted_text else result["text"]
+                    
+                    for segment in segments:
+                        text = segment.text.strip()
+                        current_paragraph += text + " "
+                        
+                        if text.endswith(('.', '!', '?')) and len(current_paragraph) > 300:
+                            formatted_text += current_paragraph.strip() + "\n\n"
+                            current_paragraph = ""
+                    
+                    if current_paragraph:
+                        formatted_text += current_paragraph.strip()
+                    
+                    transcription_text = formatted_text
+                    
+                else:  # Standard Whisper
+                    model = get_whisper_model(model_size)
+                    result = model.transcribe(audio_file, fp16=use_fp16)
+                    
+                    # Format text into paragraphs
+                    segments = result["segments"]
+                    formatted_text = ""
+                    current_paragraph = ""
+                    
+                    for segment in segments:
+                        text = segment["text"].strip()
+                        current_paragraph += text + " "
+                        
+                        if text.endswith(('.', '!', '?')) and len(current_paragraph) > 300:
+                            formatted_text += current_paragraph.strip() + "\n\n"
+                            current_paragraph = ""
+                    
+                    if current_paragraph:
+                        formatted_text += current_paragraph.strip()
+                        
+                    transcription_text = formatted_text if formatted_text else result["text"]
+
+            except Exception as model_error:
+                yield json.dumps({"error": f"Transcription error: {str(model_error)}"}) + "\n"
+                return
 
             # Calculate stats
             end_time = time.time()
@@ -168,9 +228,9 @@ async def transcribe_video(request: VideoRequest):
                 conn = sqlite3.connect(DB_NAME)
                 cursor = conn.cursor()
                 cursor.execute('''
-                    INSERT INTO transcriptions (video_url, video_title, transcription, created_at)
-                    VALUES (?, ?, ?, ?)
-                ''', (video_url, video_title, transcription_text, datetime.now()))
+                    INSERT INTO transcriptions (video_url, video_title, transcription, duration, word_count, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (video_url, video_title, transcription_text, duration, word_count, datetime.now()))
                 conn.commit()
                 conn.close()
             except Exception as db_err:
@@ -197,6 +257,36 @@ async def transcribe_video(request: VideoRequest):
             yield json.dumps({"error": str(e)}) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+
+@app.get("/history")
+async def get_history():
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, video_title, created_at, video_url FROM transcriptions ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        history = [dict(row) for row in rows]
+        conn.close()
+        return history
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/history/{item_id}")
+async def get_history_item(item_id: int):
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM transcriptions WHERE id = ?", (item_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return dict(row)
+        else:
+            raise HTTPException(status_code=404, detail="Transcription not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
