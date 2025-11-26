@@ -1,3 +1,68 @@
+// YouTube Player API
+let player;
+let isPlayerReady = false;
+let currentVideoId = null;
+let currentVideoUrl = ''; // Store current video URL globally
+let isYouTubeAPIReady = false;
+
+// Called by YouTube IFrame API when ready
+window.onYouTubeIframeAPIReady = function () {
+    console.log('YouTube IFrame API ready');
+    isYouTubeAPIReady = true;
+};
+
+function extractVideoId(url) {
+    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+    const match = url.match(regex);
+    return match ? match[1] : null;
+}
+
+function loadYouTubePlayer(videoId) {
+    currentVideoId = videoId;
+
+    // Wait for YouTube API to be ready
+    if (!isYouTubeAPIReady) {
+        console.log('YouTube API not ready yet, waiting...');
+        setTimeout(() => loadYouTubePlayer(videoId), 100);
+        return;
+    }
+
+    if (player && player.loadVideoById) {
+        console.log('Loading video:', videoId);
+        player.loadVideoById(videoId);
+    } else {
+        console.log('Creating new player with video:', videoId);
+        player = new YT.Player('youtubePlayer', {
+            height: '360',
+            width: '640',
+            videoId: videoId,
+            playerVars: {
+                'playsinline': 1,
+                'rel': 0,
+                'modestbranding': 1
+            },
+            events: {
+                'onReady': function (event) {
+                    isPlayerReady = true;
+                    console.log('YouTube player ready');
+                },
+                'onError': function (event) {
+                    console.error('YouTube player error:', event.data);
+                }
+            }
+        });
+    }
+}
+
+function jumpToTime(seconds) {
+    if (player && isPlayerReady && player.seekTo) {
+        player.seekTo(seconds, true);
+        player.playVideo();
+    } else {
+        console.log('Player not ready for seeking');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const videoUrlInput = document.getElementById('videoUrl');
     const transcribeBtn = document.getElementById('transcribeBtn');
@@ -21,6 +86,9 @@ document.addEventListener('DOMContentLoaded', () => {
     transcribeBtn.addEventListener('click', async () => {
         const url = videoUrlInput.value.trim();
         if (!url) return;
+
+        // Store URL globally for later use
+        currentVideoUrl = url;
 
         // Reset UI
         transcribeBtn.classList.add('loading');
@@ -171,6 +239,16 @@ document.addEventListener('DOMContentLoaded', () => {
                             // Display transcription (without timestamps by default)
                             transcriptionText.textContent = data.data.transcription;
 
+                            // Extract and store video ID for player
+                            const videoId = extractVideoId(currentVideoUrl);
+                            if (videoId) {
+                                currentVideoId = videoId;
+                                const togglePlayerBtn = document.getElementById('togglePlayerBtn');
+                                if (togglePlayerBtn) {
+                                    togglePlayerBtn.classList.remove('hidden');
+                                }
+                            }
+
                             // Show/hide timestamp toggle based on segments availability
                             const toggleBtn = document.getElementById('toggleTimestampsBtn');
                             if (window.currentSegments.length > 0) {
@@ -184,6 +262,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             document.getElementById('statWords').textContent = `📝 ${data.data.stats.word_count} palabras`;
 
                             resultContainer.classList.remove('hidden');
+
+                            // Activate Canvas View (split-screen)
+                            setTimeout(() => {
+                                document.getElementById('appContainer').classList.add('canvas-view');
+                            }, 100);
 
                             // Animate Result Entrance
                             anime({
@@ -261,6 +344,16 @@ document.addEventListener('DOMContentLoaded', () => {
             text.className = 'segment-text';
             text.textContent = segment.text;
 
+            // Add click handler to jump to video time
+            segmentDiv.addEventListener('click', () => {
+                const playerContainer = document.getElementById('videoPlayerContainer');
+                if (!playerContainer.classList.contains('active')) {
+                    // Auto-show player if hidden
+                    document.getElementById('togglePlayerBtn').click();
+                }
+                jumpToTime(segment.start);
+            });
+
             segmentDiv.appendChild(timestamp);
             segmentDiv.appendChild(text);
             transcriptionText.appendChild(segmentDiv);
@@ -271,6 +364,43 @@ document.addEventListener('DOMContentLoaded', () => {
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    // Toggle Video Player
+    const togglePlayerBtn = document.getElementById('togglePlayerBtn');
+    const videoPlayerContainer = document.getElementById('videoPlayerContainer');
+    const closePlayerBtn = document.getElementById('closePlayerBtn');
+
+    if (togglePlayerBtn && videoPlayerContainer) {
+        togglePlayerBtn.addEventListener('click', () => {
+            if (videoPlayerContainer.classList.contains('active')) {
+                // Hide player
+                videoPlayerContainer.classList.remove('active');
+                videoPlayerContainer.classList.add('hidden');
+                togglePlayerBtn.classList.remove('active');
+                togglePlayerBtn.querySelector('span').textContent = 'Mostrar video';
+            } else {
+                // Show player
+                videoPlayerContainer.classList.remove('hidden');
+                videoPlayerContainer.classList.add('active');
+                togglePlayerBtn.classList.add('active');
+                togglePlayerBtn.querySelector('span').textContent = 'Ocultar video';
+
+                // Load video if not already loaded
+                if (currentVideoId) {
+                    loadYouTubePlayer(currentVideoId);
+                }
+            }
+        });
+    }
+
+    if (closePlayerBtn && videoPlayerContainer && togglePlayerBtn) {
+        closePlayerBtn.addEventListener('click', () => {
+            videoPlayerContainer.classList.remove('active');
+            videoPlayerContainer.classList.add('hidden');
+            togglePlayerBtn.classList.remove('active');
+            togglePlayerBtn.querySelector('span').textContent = 'Mostrar video';
+        });
     }
 
     copyBtn.addEventListener('click', () => {
@@ -440,6 +570,18 @@ document.addEventListener('DOMContentLoaded', () => {
                                     window.currentSegments = [];
                                 }
 
+                                // Setup video player for history item
+                                const videoId = extractVideoId(detail.video_url);
+                                if (videoId) {
+                                    currentVideoId = videoId;
+                                    const togglePlayerBtn = document.getElementById('togglePlayerBtn');
+                                    if (togglePlayerBtn) {
+                                        togglePlayerBtn.classList.remove('hidden');
+                                        togglePlayerBtn.classList.remove('active');
+                                        togglePlayerBtn.querySelector('span').textContent = 'Mostrar video';
+                                    }
+                                }
+
                                 // Display saved stats if available
                                 if (detail.duration) {
                                     document.getElementById('statTime').textContent = `⏱️ ${detail.duration}s`;
@@ -454,6 +596,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
 
                                 resultContainer.classList.remove('hidden');
+
+                                // Activate Canvas View
+                                setTimeout(() => {
+                                    document.getElementById('appContainer').classList.add('canvas-view');
+                                }, 100);
 
                                 // Animate Result Entrance
                                 anime({
