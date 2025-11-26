@@ -133,6 +133,51 @@ button#transcribeBtn:disabled {
     transform: none;
 }
 
+.resul.transcription-text {
+    background: white;
+    padding: 2rem;
+    border-radius: var(--radius-md);
+    line-height: 1.8;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    font-size: 1rem;
+    border: 1px solid var(--border-color);
+}
+
+.timestamp-segment {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    border-radius: var(--radius-sm);
+    transition: background-color 0.2s;
+    cursor: pointer;
+}
+
+.timestamp-segment:hover {
+    background-color: var(--surface-color);
+}
+
+.timestamp {
+    display: inline-block;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: var(--primary-color);
+    background: rgba(66, 133, 244, 0.1);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-right: 0.5rem;
+    font-weight: 500;
+}
+
+.segment-text {
+    display: inline;
+    color: var(--text-primary);
+}
+
+.stats {
+    animation: fadeIn 0.5s ease-out;
+    position: relative;
+}
+
 .result-container {
     background: #ffffff;
     padding: 2.5rem;
@@ -146,20 +191,59 @@ button#transcribeBtn:disabled {
 .result-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
     margin-bottom: 1.5rem;
-    border-bottom: 1px solid var(--surface-color);
-    padding-bottom: 1rem;
+}
+
+.result-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
 }
 
 .result-header h2 {
-    font-size: 1.25rem;
-    font-weight: 500;
+    font-size: 1.5rem;
     color: var(--text-primary);
-    line-height: 1.4;
+    margin: 0;
 }
 
-.transcription-box {
+.transcription-controls {
+    margin: 1rem 0;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: var(--transition);
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.toggle-btn:hover {
+    background: rgba(66, 133, 244, 0.1);
+    border-color: var(--primary-color);
+}
+
+.toggle-btn.active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+.toggle-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.transcription-text {
     line-height: 1.8;
     color: var(--text-secondary);
     font-size: 1.05rem;
@@ -585,8 +669,9 @@ button.loading .loader {
     cursor: pointer;
     transition: background-color 0.2s;
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
 }
 
 .history-item:last-child {
@@ -595,6 +680,13 @@ button.loading .loader {
 
 .history-item:hover {
     background-color: var(--surface-color);
+}
+
+.history-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .history-title {
@@ -612,4 +704,27 @@ button.loading .loader {
     text-align: center;
     padding: 3rem;
     color: var(--text-secondary);
+}
+
+.delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: var(--text-secondary);
+    transition: var(--transition);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.delete-btn:hover {
+    background: rgba(179, 38, 30, 0.1);
+    color: #b3261e;
+}
+
+.delete-btn svg {
+    width: 20px;
+    height: 20px;
 }

@@ -68,6 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Get selected model options
             const engine = document.getElementById('engineSelect').value;
             const modelSize = document.getElementById('modelSizeSelect').value;
+            const language = document.getElementById('languageSelect').value;
 
             const response = await fetch('/transcribe', {
                 method: 'POST',
@@ -77,7 +78,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({
                     url: url,
                     engine: engine,
-                    model_size: modelSize
+                    model_size: modelSize,
+                    language: language
                 }),
             });
 
@@ -161,7 +163,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
                             // Show Result
                             videoTitle.textContent = data.data.title;
+
+                            // Store segments globally
+                            window.currentSegments = data.data.segments || [];
+                            window.showingTimestamps = false;
+
+                            // Display transcription (without timestamps by default)
                             transcriptionText.textContent = data.data.transcription;
+
+                            // Show/hide timestamp toggle based on segments availability
+                            const toggleBtn = document.getElementById('toggleTimestampsBtn');
+                            if (window.currentSegments.length > 0) {
+                                toggleBtn.classList.remove('hidden');
+                            } else {
+                                toggleBtn.classList.add('hidden');
+                            }
 
                             // Update Stats
                             document.getElementById('statTime').textContent = `⏱️ ${data.data.stats.duration}s`;
@@ -206,6 +222,57 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Toggle Timestamps Display
+    const toggleTimestampsBtn = document.getElementById('toggleTimestampsBtn');
+    toggleTimestampsBtn.addEventListener('click', () => {
+        window.showingTimestamps = !window.showingTimestamps;
+
+        if (window.showingTimestamps) {
+            // Show with timestamps
+            displayWithTimestamps();
+            toggleTimestampsBtn.classList.add('active');
+            toggleTimestampsBtn.querySelector('span').textContent = 'Ocultar timestamps';
+        } else {
+            // Show plain text
+            transcriptionText.textContent = transcriptionText.getAttribute('data-plain-text') || transcriptionText.textContent;
+            toggleTimestampsBtn.classList.remove('active');
+            toggleTimestampsBtn.querySelector('span').textContent = 'Mostrar timestamps';
+        }
+    });
+
+    function displayWithTimestamps() {
+        // Store plain text
+        if (!transcriptionText.getAttribute('data-plain-text')) {
+            transcriptionText.setAttribute('data-plain-text', transcriptionText.textContent);
+        }
+
+        // Clear and rebuild with timestamps
+        transcriptionText.innerHTML = '';
+
+        window.currentSegments.forEach(segment => {
+            const segmentDiv = document.createElement('div');
+            segmentDiv.className = 'timestamp-segment';
+
+            const timestamp = document.createElement('span');
+            timestamp.className = 'timestamp';
+            timestamp.textContent = formatTimestamp(segment.start);
+
+            const text = document.createElement('span');
+            text.className = 'segment-text';
+            text.textContent = segment.text;
+
+            segmentDiv.appendChild(timestamp);
+            segmentDiv.appendChild(text);
+            transcriptionText.appendChild(segmentDiv);
+        });
+    }
+
+    function formatTimestamp(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
     copyBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(transcriptionText.textContent)
             .then(() => {
@@ -219,6 +286,76 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error al copiar: ', err);
             });
     });
+
+    // Export as TXT
+    const exportTxtBtn = document.getElementById('exportTxtBtn');
+    exportTxtBtn.addEventListener('click', () => {
+        const title = videoTitle.textContent || 'transcripcion';
+        const text = transcriptionText.textContent;
+
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${sanitizeFilename(title)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+
+    // Export as SRT
+    const exportSrtBtn = document.getElementById('exportSrtBtn');
+    exportSrtBtn.addEventListener('click', () => {
+        const title = videoTitle.textContent || 'transcripcion';
+        let srtContent = '';
+
+        // Use real segments if available, otherwise fall back to estimated
+        if (window.currentSegments && window.currentSegments.length > 0) {
+            window.currentSegments.forEach((segment, idx) => {
+                srtContent += `${idx + 1}\n`;
+                srtContent += `${formatSRTTime(segment.start)} --> ${formatSRTTime(segment.end)}\n`;
+                srtContent += `${segment.text.trim()}\n\n`;
+            });
+        } else {
+            // Fallback to estimated timestamps
+            const text = transcriptionText.textContent;
+            const paragraphs = text.split('\n\n').filter(p => p.trim());
+
+            paragraphs.forEach((para, idx) => {
+                const startSeconds = idx * 10;
+                const endSeconds = (idx + 1) * 10;
+
+                srtContent += `${idx + 1}\n`;
+                srtContent += `${formatSRTTime(startSeconds)} --> ${formatSRTTime(endSeconds)}\n`;
+                srtContent += `${para.trim()}\n\n`;
+            });
+        }
+
+        const blob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${sanitizeFilename(title)}.srt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+
+    // Helper function to format time as SRT format
+    function formatSRTTime(seconds) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        const ms = Math.floor((seconds % 1) * 1000);
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+    }
+
+    // Helper function to sanitize filename
+    function sanitizeFilename(name) {
+        return name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    }
 
     // History Feature
     const historyBtn = document.getElementById('historyBtn');
@@ -262,11 +399,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
 
                         el.innerHTML = `
-                        <div class="history-title">${item.video_title || 'Video sin título'}</div>
-                        <div class="history-date">${date}</div>
+                        <div class="history-content">
+                            <div class="history-title">${item.video_title || 'Video sin título'}</div>
+                            <div class="history-date">${date}</div>
+                        </div>
+                        <button class="delete-btn" data-id="${item.id}" title="Eliminar">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                        </button>
                     `;
 
-                        el.addEventListener('click', async () => {
+                        // Click on content to load
+                        const contentDiv = el.querySelector('.history-content');
+                        contentDiv.addEventListener('click', async () => {
                             // Fetch full details
                             try {
                                 const detailResponse = await fetch(`/history/${item.id}`);
@@ -275,6 +422,23 @@ document.addEventListener('DOMContentLoaded', () => {
                                 // Populate Main UI
                                 videoTitle.textContent = detail.video_title;
                                 transcriptionText.textContent = detail.transcription;
+
+                                // Load segments if available
+                                try {
+                                    window.currentSegments = detail.segments ? JSON.parse(detail.segments) : [];
+                                    window.showingTimestamps = false;
+
+                                    const toggleBtn = document.getElementById('toggleTimestampsBtn');
+                                    if (window.currentSegments.length > 0) {
+                                        toggleBtn.classList.remove('hidden');
+                                        toggleBtn.classList.remove('active');
+                                        toggleBtn.querySelector('span').textContent = 'Mostrar timestamps';
+                                    } else {
+                                        toggleBtn.classList.add('hidden');
+                                    }
+                                } catch (e) {
+                                    window.currentSegments = [];
+                                }
 
                                 // Display saved stats if available
                                 if (detail.duration) {
@@ -304,6 +468,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
                             } catch (err) {
                                 console.error("Error loading history item", err);
+                            }
+                        });
+
+                        // Delete button handler
+                        const deleteBtn = el.querySelector('.delete-btn');
+                        deleteBtn.addEventListener('click', async (e) => {
+                            e.stopPropagation(); // Prevent triggering the load handler
+
+                            if (confirm('¿Estás seguro de que quieres eliminar esta transcripción?')) {
+                                try {
+                                    const response = await fetch(`/history/${item.id}`, {
+                                        method: 'DELETE'
+                                    });
+
+                                    if (response.ok) {
+                                        el.remove(); // Remove from DOM
+
+                                        // Check if list is now empty
+                                        if (historyList.querySelectorAll('.history-item').length === 0) {
+                                            historyList.innerHTML = '<div class="empty-history">No hay transcripciones guardadas.</div>';
+                                        }
+                                    } else {
+                                        alert('Error al eliminar la transcripción');
+                                    }
+                                } catch (err) {
+                                    console.error("Error deleting history item", err);
+                                    alert('Error al eliminar la transcripción');
+                                }
                             }
                         });
 

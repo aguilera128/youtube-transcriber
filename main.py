@@ -41,6 +41,7 @@ def init_db():
             transcription TEXT,
             duration REAL,
             word_count INTEGER,
+            segments TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -55,6 +56,12 @@ def init_db():
     try:
         cursor.execute("ALTER TABLE transcriptions ADD COLUMN word_count INTEGER")
         print("Added 'word_count' column to existing table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
+    try:
+        cursor.execute("ALTER TABLE transcriptions ADD COLUMN segments TEXT")
+        print("Added 'segments' column to existing table")
     except sqlite3.OperationalError:
         pass  # Column already exists
     
@@ -80,6 +87,7 @@ class VideoRequest(BaseModel):
     url: str
     engine: str = "whisper"  # "whisper" or "faster-whisper"
     model_size: str = "tiny"  # "tiny", "base", "small", "medium"
+    language: str = "auto"  # "auto", "es", "en", "fr", etc.
 
 def get_device():
     if torch.cuda.is_available():
@@ -128,6 +136,7 @@ async def transcribe_video(request: VideoRequest):
     video_url = request.url
     engine = request.engine
     model_size = request.model_size
+    language = request.language if request.language != "auto" else None
     
     if not video_url:
         raise HTTPException(status_code=400, detail="No URL provided.")
@@ -170,18 +179,27 @@ async def transcribe_video(request: VideoRequest):
 
             # Load appropriate model based on engine
             try:
+                segments_data = []  # Store segments with timestamps
+                
                 if engine == "faster-whisper":
                     model = get_faster_whisper_model(model_size)
                     # Faster-Whisper returns segments and info
-                    segments, info = model.transcribe(audio_file, beam_size=5)
+                    segments, info = model.transcribe(audio_file, beam_size=5, language=language)
                     
-                    # Convert segments to text with formatting
+                    # Convert segments to text with formatting and collect timestamp data
                     formatted_text = ""
                     current_paragraph = ""
                     
                     for segment in segments:
                         text = segment.text.strip()
                         current_paragraph += text + " "
+                        
+                        # Store segment data
+                        segments_data.append({
+                            "start": round(segment.start, 2),
+                            "end": round(segment.end, 2),
+                            "text": text
+                        })
                         
                         if text.endswith(('.', '!', '?')) and len(current_paragraph) > 300:
                             formatted_text += current_paragraph.strip() + "\n\n"
@@ -194,9 +212,9 @@ async def transcribe_video(request: VideoRequest):
                     
                 else:  # Standard Whisper
                     model = get_whisper_model(model_size)
-                    result = model.transcribe(audio_file, fp16=use_fp16)
+                    result = model.transcribe(audio_file, fp16=use_fp16, language=language)
                     
-                    # Format text into paragraphs
+                    # Format text into paragraphs and collect timestamp data
                     segments = result["segments"]
                     formatted_text = ""
                     current_paragraph = ""
@@ -204,6 +222,13 @@ async def transcribe_video(request: VideoRequest):
                     for segment in segments:
                         text = segment["text"].strip()
                         current_paragraph += text + " "
+                        
+                        # Store segment data
+                        segments_data.append({
+                            "start": round(segment["start"], 2),
+                            "end": round(segment["end"], 2),
+                            "text": text
+                        })
                         
                         if text.endswith(('.', '!', '?')) and len(current_paragraph) > 300:
                             formatted_text += current_paragraph.strip() + "\n\n"
@@ -227,10 +252,14 @@ async def transcribe_video(request: VideoRequest):
             try:
                 conn = sqlite3.connect(DB_NAME)
                 cursor = conn.cursor()
+                
+                # Convert segments to JSON string
+                segments_json = json.dumps(segments_data)
+                
                 cursor.execute('''
-                    INSERT INTO transcriptions (video_url, video_title, transcription, duration, word_count, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (video_url, video_title, transcription_text, duration, word_count, datetime.now()))
+                    INSERT INTO transcriptions (video_url, video_title, transcription, duration, word_count, segments, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (video_url, video_title, transcription_text, duration, word_count, segments_json, datetime.now()))
                 conn.commit()
                 conn.close()
             except Exception as db_err:
@@ -242,6 +271,7 @@ async def transcribe_video(request: VideoRequest):
                 "data": {
                     "title": video_title,
                     "transcription": transcription_text,
+                    "segments": segments_data,  # Include segments in response
                     "stats": {
                         "duration": duration,
                         "word_count": word_count
@@ -285,6 +315,23 @@ async def get_history_item(item_id: int):
             return dict(row)
         else:
             raise HTTPException(status_code=404, detail="Transcription not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/history/{item_id}")
+async def delete_history_item(item_id: int):
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM transcriptions WHERE id = ?", (item_id,))
+        conn.commit()
+        deleted_count = cursor.rowcount
+        conn.close()
+        if deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Transcription not found")
+        return {"success": True, "message": "Transcription deleted"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

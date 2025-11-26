@@ -55,6 +55,21 @@
                             <option value="medium">Medium (Máxima calidad)</option>
                         </select>
                     </div>
+                    <div class="selector-group">
+                        <label for="languageSelect">Idioma:</label>
+                        <select id="languageSelect">
+                            <option value="auto" selected>Auto-detectar</option>
+                            <option value="es">Español</option>
+                            <option value="en">English</option>
+                            <option value="fr">Français</option>
+                            <option value="de">Deutsch</option>
+                            <option value="it">Italiano</option>
+                            <option value="pt">Português</option>
+                            <option value="zh">中文</option>
+                            <option value="ja">日本語</option>
+                            <option value="ko">한국어</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -72,6 +87,7 @@
 
             <div id="errorMsg" class="error-message hidden"></div>
 
+            <!-- Result -->
             <div id="resultContainer" class="result-container hidden">
                 <div class="result-header">
                     <div class="header-content">
@@ -82,6 +98,22 @@
                         </div>
                     </div>
                     <div class="actions">
+                        <button id="exportTxtBtn" class="icon-btn" title="Exportar como TXT">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="12" y1="18" x2="12" y2="12"></line>
+                                <line x1="9" y1="15" x2="15" y2="15"></line>
+                            </svg>
+                        </button>
+                        <button id="exportSrtBtn" class="icon-btn" title="Exportar como SRT">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="8" y1="12" x2="16" y2="12"></line>
+                                <line x1="8" y1="16" x2="16" y2="16"></line>
+                                <line x1="8" y1="8" x2="16" y2="8"></line>
+                            </svg>
+                        </button>
                         <button id="copyBtn" class="icon-btn" title="Copiar texto">
                             <svg viewBox="0 0 24 24">
                                 <path
@@ -91,9 +123,18 @@
                         </button>
                     </div>
                 </div>
-                <div class="transcription-box">
-                    <p id="transcriptionText"></p>
+
+                <div class="transcription-controls">
+                    <button id="toggleTimestampsBtn" class="toggle-btn hidden">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        <span>Mostrar timestamps</span>
+                    </button>
                 </div>
+
+                <div id="transcriptionText" class="transcription-text"></div>
             </div>
         </main>
 
@@ -118,7 +159,7 @@
             </div>
         </div>
     </div>
-    <script src="script.js?v=1.6"></script>
+    <script src="script.js?v=1.9"></script>
 </body>
 
 </html>
