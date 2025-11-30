@@ -5,9 +5,24 @@ let currentVideoId = null;
 let currentVideoUrl = ''; // Store current video URL globally
 let isYouTubeAPIReady = false;
 
+
+// Show debug info on page
+function showDebugInfo(message, isError = false) {
+    const playerDiv = document.getElementById('youtubePlayer');
+    if (playerDiv) {
+        const debugDiv = document.createElement('div');
+        debugDiv.style.cssText = 'position: absolute; top: 10px; left: 10px; background: ' + (isError ? 'red' : 'yellow') + '; padding: 10px; border-radius: 4px; z-index: 9999; max-width: 500px; font-size: 12px;';
+        debugDiv.textContent = message;
+        playerDiv.parentElement.insertBefore(debugDiv, playerDiv);
+        console.log('[PAGE DEBUG]', message);
+    }
+}
+
 // Called by YouTube IFrame API when ready
 window.onYouTubeIframeAPIReady = function () {
-    console.log('YouTube IFrame API ready');
+    console.log('[DEBUG] YouTube IFrame API ready callback fired');
+    console.log('[DEBUG] YT object:', typeof YT !== 'undefined' ? YT : 'undefined');
+    console.log('[DEBUG] YT.Player:', typeof YT !== 'undefined' ? YT.Player : 'undefined');
     isYouTubeAPIReady = true;
 };
 
@@ -19,38 +34,67 @@ function extractVideoId(url) {
 
 function loadYouTubePlayer(videoId) {
     currentVideoId = videoId;
+    console.log('[DEBUG] loadYouTubePlayer called with videoId:', videoId);
+    
+    // Check if div exists
+    const playerDiv = document.getElementById('youtubePlayer');
+    console.log('[DEBUG] Player div exists:', !!playerDiv);
+    console.log('[DEBUG] Player div:', playerDiv);
+    
+    // Check if YouTube API is loaded - check directly for YT.Player
+    const apiReady = typeof YT !== 'undefined' && typeof YT.Player === 'function';
+    console.log('[DEBUG] isYouTubeAPIReady (old flag):', isYouTubeAPIReady);
+    console.log('[DEBUG] typeof YT:', typeof YT);
+    console.log('[DEBUG] typeof YT.Player:', typeof window.YT !== 'undefined' ? typeof YT.Player : 'undefined');
+    console.log('[DEBUG] API actually ready:', apiReady);
 
-    // Wait for YouTube API to be ready
-    if (!isYouTubeAPIReady) {
-        console.log('YouTube API not ready yet, waiting...');
+    // Wait for YouTube API to be ready - check YT.Player directly instead of callback flag
+    if (!apiReady) {
+        console.log('[DEBUG] YouTube API not ready yet, waiting...');
         setTimeout(() => loadYouTubePlayer(videoId), 100);
         return;
+    } else {
+        console.log('[DEBUG] YouTube API is ready! Proceeding to create player...');
+        // showDebugInfo removed
     }
 
     if (player && player.loadVideoById) {
-        console.log('Loading video:', videoId);
+        console.log('[DEBUG] Player exists, loading new video:', videoId);
         player.loadVideoById(videoId);
     } else {
-        console.log('Creating new player with video:', videoId);
-        player = new YT.Player('youtubePlayer', {
-            height: '360',
-            width: '640',
-            videoId: videoId,
-            playerVars: {
-                'playsinline': 1,
-                'rel': 0,
-                'modestbranding': 1
-            },
-            events: {
-                'onReady': function (event) {
-                    isPlayerReady = true;
-                    console.log('YouTube player ready');
+        console.log('[DEBUG] Creating new YT.Player with videoId:', videoId);
+        // showDebugInfo removed
+        try {
+            player = new YT.Player('youtubePlayer', {
+                height: '360',
+                width: '640',
+                videoId: videoId,
+                playerVars: {
+                    'playsinline': 1,
+                    'rel': 0,
+                    'modestbranding': 1
                 },
-                'onError': function (event) {
-                    console.error('YouTube player error:', event.data);
+                events: {
+                    'onReady': function (event) {
+                        isPlayerReady = true;
+                        console.log('[DEBUG] YouTube player onReady event fired');
+                        console.log('[DEBUG] Player object:', player);
+                    },
+                    'onError': function (event) {
+                        console.error('[DEBUG] YouTube player error event:', event.data);
+                        // showDebugInfo removed
+                        console.error('[DEBUG] Error codes: 2=Invalid ID, 5=HTML5 error, 100=Not found, 101/150=Embedding disabled');
+                    },
+                    'onStateChange': function(event) {
+                        console.log('[DEBUG] Player state changed:', event.data);
+                    }
                 }
-            }
-        });
+            });
+            console.log('[DEBUG] YT.Player constructor called, player object:', player);
+        } catch (error) {
+            console.error('[DEBUG] Error creating YT.Player:', error);
+            // showDebugInfo removed
+        }
     }
 }
 
@@ -552,6 +596,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 // Populate Main UI
                                 videoTitle.textContent = detail.video_title;
                                 transcriptionText.textContent = detail.transcription;
+                                // Force styles to ensure visibility
+                                transcriptionText.style.color = '#111827';
+                                transcriptionText.style.display = 'block';
+                                console.log('Loaded transcription:', detail.transcription ? detail.transcription.substring(0, 50) + '...' : 'EMPTY');
 
                                 // Load segments if available
                                 try {
@@ -597,19 +645,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
                                 resultContainer.classList.remove('hidden');
 
-                                // Activate Canvas View
-                                setTimeout(() => {
-                                    document.getElementById('appContainer').classList.add('canvas-view');
-                                }, 100);
+                                // Activate Canvas View (without animation for history items)
+                                const appContainer = document.getElementById('appContainer');
+                                appContainer.classList.add('canvas-view', 'from-history');
 
                                 // Animate Result Entrance
-                                anime({
-                                    targets: '.result-container',
-                                    translateY: [20, 0],
-                                    opacity: [0, 1],
-                                    duration: 800,
-                                    easing: 'easeOutExpo'
-                                });
+                                // anime({
+                                //     targets: '.result-container',
+                                //     translateY: [20, 0],
+                                //     opacity: [0, 1],
+                                //     duration: 800,
+                                //     easing: 'easeOutExpo'
+                                // });
+                                resultContainer.style.opacity = '1';
+                                resultContainer.style.transform = 'none';
 
                                 toggleModal(false);
 

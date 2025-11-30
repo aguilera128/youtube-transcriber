@@ -160,6 +160,9 @@ async def transcribe_video(request: VideoRequest):
                 }],
                 'outtmpl': 'downloads/%(id)s.%(ext)s',
                 'quiet': True,
+                'restrictfilenames': True,
+                'windowsfilenames': True,
+                'noplaylist': True,
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
