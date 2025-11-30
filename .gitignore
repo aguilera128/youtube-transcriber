@@ -1,6 +1,26 @@
+# Python
 venv/
+.venv/
 __pycache__/
 *.pyc
-.DS_Store
+*.pyo
+*.egg-info/
+
+# Database
 transcriptions.db
+
+# Downloads (audio files)
 downloads/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.vsix
+
+# Backups
+*.backup
+*_backup.*
